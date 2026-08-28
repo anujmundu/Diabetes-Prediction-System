@@ -100,13 +100,18 @@ streamlit run app.py
 
 ---
 
-## 📊 Model Evaluation Summary
+## 📊 Model Evaluation Summary (10-Fold Stratified CV & Test Holdout)
 
-| Model | 10-Fold CV Accuracy | 10-Fold CV ROC-AUC | Test Recall (Sensitivity) |
-| :--- | :---: | :---: | :---: |
-| **LightGBM / XGBoost** | **79.8% - 80.5%** | **0.880** | **79.6% - 85.5%** |
-| **Random Forest** | **78.4%** | **0.876** | **84.3%** |
-| **Stacking / Soft Voting** | **79.1%** | **0.877** | **84.3%** |
+| Model | 10-Fold CV Accuracy | 10-Fold CV ROC-AUC | 10-Fold CV Recall | Test Holdout ROC-AUC | Test Holdout Recall |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Gradient Boosting** | **80.50%** | **0.8844** | **83.25%** | **0.8141** | **72.22%** |
+| **Calibrated Soft Voting** | **79.12%** | **0.8793** | **82.00%** | **0.8170** | **75.93%** |
+| **XGBoost** | **79.38%** | **0.8786** | **82.00%** | **0.8128** | **75.93%** |
+| **LightGBM** | **79.38%** | **0.8761** | **82.25%** | **0.8094** | **79.63%** |
+| **Random Forest** | **78.25%** | **0.8757** | **81.50%** | **0.8185** | **72.22%** |
+| **Extra Trees** | **78.12%** | **0.8621** | **78.25%** | **0.8157** | **74.07%** |
+| **Logistic Regression** | **75.75%** | **0.8564** | **75.25%** | **0.8169** | **81.48%** |
+
 *All visual evaluation charts are available in `reports/`.*
 
 ---

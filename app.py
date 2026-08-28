@@ -5,13 +5,13 @@ import numpy as np
 import streamlit as st
 
 st.set_page_config(
-    page_title="Diabetes Early Detection & Risk Predictor",
+    page_title="Early Diabetes Detection & Clinical Decision System",
     page_icon="🩺",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom Styling for modern medical dashboard aesthetics
+# Custom Styling for clean clinical decision dashboard
 st.markdown("""
 <style>
     .main-header {
@@ -76,7 +76,7 @@ def main():
 
     if model is None or preprocessor is None:
         st.warning("⚠️ Model artifacts not found. Please run the training pipeline first by executing `python main.py` in your terminal.")
-        st.info("Click the button below to trigger pipeline execution.")
+        st.info("Click the button below to trigger training.")
         if st.button("🚀 Train Models Now"):
             with st.spinner("Training models across 10-fold cross validation..."):
                 from main import run_diabetes_pipeline
@@ -85,6 +85,8 @@ def main():
         return
 
     best_model_name = metadata.get("best_model_name", "Trained Ensemble Classifier")
+    optimal_threshold = metadata.get("optimal_threshold", 0.45)
+
     st.sidebar.header("📋 Patient Clinical Inputs")
     st.sidebar.caption("Provide the patient's physiological parameters below:")
 
@@ -98,7 +100,7 @@ def main():
     dpf = st.sidebar.number_input("Diabetes Pedigree Function", min_value=0.05, max_value=2.50, value=0.45, step=0.01, help="Genetic family history risk coefficient")
     age = st.sidebar.slider("Patient Age (Years)", min_value=18, max_value=100, value=33, help="Age in years")
 
-    # Quick Presets
+    # Quick Case Presets
     st.sidebar.markdown("---")
     st.sidebar.subheader("⚡ Quick Case Scenarios")
     col_pre1, col_pre2 = st.sidebar.columns(2)
@@ -126,26 +128,26 @@ def main():
     
     # Predict
     prob = float(model.predict_proba(input_processed)[0, 1]) if hasattr(model, "predict_proba") else 0.5
-    prediction = int(model.predict(input_processed)[0])
+    prediction = int(prob >= optimal_threshold)
 
     # Main dashboard layout
     col_left, col_right = st.columns([1.1, 1])
 
     with col_left:
-        st.subheader("🎯 Risk Stratification Assessment")
+        st.subheader("🎯 Clinical Risk Stratification")
         
         if prob < 0.35:
-            risk_category = "LOW RISK"
+            risk_category = "LOW CLINICAL RISK"
             box_class = "risk-low"
             emoji = "🟢"
-            guidance = "The patient demonstrates healthy metabolic indicators. Encourage maintaining standard physical activity, balanced diet, and periodic annual checkups."
-        elif prob < 0.65:
-            risk_category = "MODERATE / PRE-DIABETIC RISK"
+            guidance = "The patient demonstrates healthy metabolic indicators. Encourage maintaining standard physical activity, balanced whole-food diet, and periodic annual checkups."
+        elif prob < optimal_threshold:
+            risk_category = "MODERATE / BORDERLINE RISK"
             box_class = "risk-moderate"
             emoji = "🟡"
-            guidance = "The patient shows borderline elevated biomarkers (impaired fasting glucose, elevated BMI, or familial risk). Recommend HbA1c testing, nutritional counseling, and aerobic exercise."
+            guidance = "Borderline elevated metabolic markers detected. Recommend screening for Glycated Hemoglobin (HbA1c), nutritional counseling, and 150 mins/week moderate exercise."
         else:
-            risk_category = "HIGH CLINICAL RISK"
+            risk_category = "HIGH CLINICAL RISK (DIABETIC PHYSIOLOGY)"
             box_class = "risk-high"
             emoji = "🔴"
             guidance = "Significant likelihood of diabetic physiology. Immediate follow-up with complete glycated hemoglobin (HbA1c) profiling, physician consultation, and glucose monitoring is strongly advised."
@@ -153,13 +155,13 @@ def main():
         st.markdown(f"""
         <div class="{box_class}">
             <h3 style="margin-top:0; margin-bottom: 0.5rem;">{emoji} Diagnosis Assessment: <b>{risk_category}</b></h3>
-            <p style="font-size:1.15rem; margin-bottom:0.5rem;">Estimated Probability of Diabetes: <b>{prob * 100:.1f}%</b></p>
+            <p style="font-size:1.15rem; margin-bottom:0.5rem;">Calculated Probability of Diabetes: <b>{prob * 100:.1f}%</b></p>
             <p style="margin-bottom:0; color:#374151;">{guidance}</p>
         </div>
         """, unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
-        st.progress(prob, text=f"Calculated Diabetes Likelihood Score: {prob*100:.1f}%")
+        st.progress(prob, text=f"Diabetes Likelihood Score: {prob*100:.1f}% (Decision Threshold: {optimal_threshold*100:.1f}%)")
 
         # Computed Physiological Biomarkers
         st.subheader("🔬 Derived Metabolic Biomarkers")
@@ -167,24 +169,24 @@ def main():
         metabolic_score = int(glucose >= 100) + int(blood_pressure >= 80) + int(bmi >= 30)
         
         c1, c2, c3 = st.columns(3)
-        c1.metric("HOMA-IR (Insulin Res.)", f"{homa_ir:.2f}", help="Normal: < 2.0. Insulin resistance: > 2.5")
+        c1.metric("HOMA-IR (Insulin Resistance)", f"{homa_ir:.2f}", help="Normal: < 2.0. Insulin resistance: > 2.5")
         c2.metric("Metabolic Score", f"{metabolic_score}/3", help="Syndrome criteria met (Glucose, BP, BMI)")
         c3.metric("BMI Class", "Obese" if bmi >= 30 else ("Overweight" if bmi >= 25 else "Normal"))
 
     with col_right:
-        st.subheader("📊 Active Model Performance Metrics")
-        st.info(f"🏆 Active Production Model: **{best_model_name}** (10-Fold CV Optimized)")
+        st.subheader("📊 Model Diagnostic Benchmarks")
+        st.info(f"🏆 Active Model: **{best_model_name}** | Decision Threshold: **{optimal_threshold:.2f}**")
 
         cv_summary = metadata.get("cv_summary", [])
         if cv_summary:
-            cv_df = pd.DataFrame(cv_summary)[["Model", "CV Accuracy", "CV ROC-AUC", "CV Recall"]]
+            cv_df = pd.DataFrame(cv_summary)[["Model", "CV Accuracy", "CV ROC-AUC", "CV Recall (Sensitivity)"]]
             cv_df["CV Accuracy"] = cv_df["CV Accuracy"].map(lambda x: f"{x*100:.1f}%")
             cv_df["CV ROC-AUC"] = cv_df["CV ROC-AUC"].map(lambda x: f"{x:.3f}")
-            cv_df["CV Recall"] = cv_df["CV Recall"].map(lambda x: f"{x*100:.1f}%")
+            cv_df["CV Recall (Sensitivity)"] = cv_df["CV Recall (Sensitivity)"].map(lambda x: f"{x*100:.1f}%")
             st.dataframe(cv_df.head(6), use_container_width=True, hide_index=True)
 
         if os.path.exists("reports/roc_curves_comparison.png"):
-            with st.expander("📈 View ROC Curves & Model Comparisons", expanded=False):
+            with st.expander("📈 View Multi-Model ROC Curves", expanded=False):
                 st.image("reports/roc_curves_comparison.png", use_container_width=True)
 
         if os.path.exists("reports/best_model_confusion_matrix.png"):
@@ -195,22 +197,22 @@ def main():
             with st.expander("🔍 Key Diagnostic Feature Drivers", expanded=True):
                 st.image("reports/feature_importance.png", use_container_width=True)
 
-    # Detailed Clinical Advice Section
+    # Clinical Guidance Section
     st.markdown("---")
-    st.subheader("💡 Personalized Clinical Action Plan")
+    st.subheader("💡 Evidence-Based Clinical Guidance")
     rec_col1, rec_col2, rec_col3 = st.columns(3)
     with rec_col1:
         st.markdown("#### 🥗 Dietary Interventions")
         st.markdown("""
         - Prioritize low-glycemic index carbohydrates (whole grains, legumes).
         - Increase dietary fiber (> 30g/day) to slow glucose absorption.
-        - Minimize refined sugars, sweetened beverages, and ultra-processed foods.
+        - Eliminate refined sugars and sweetened beverages.
         """)
     with rec_col2:
         st.markdown("#### 🏃 Physical Activity")
         st.markdown("""
-        - Minimum 150 mins/week of moderate aerobic activity (brisk walking, swimming).
-        - Incorporate resistance/strength training 2-3 times/week to improve insulin sensitivity.
+        - Minimum 150 mins/week of moderate aerobic activity.
+        - Incorporate resistance/strength training 2-3x/week to improve insulin sensitivity.
         - Avoid prolonged sitting (> 60 minutes uninterrupted).
         """)
     with rec_col3:
@@ -218,7 +220,7 @@ def main():
         st.markdown("""
         - Measure Fasting Blood Glucose (FBG) and Glycated Hemoglobin (HbA1c).
         - Lipid panel screening (Triglycerides, HDL, LDL).
-        - Routine blood pressure and weight monitoring.
+        - Continuous blood pressure and weight monitoring.
         """)
 
 if __name__ == "__main__":
