@@ -179,11 +179,18 @@ def main():
 
         cv_summary = metadata.get("cv_summary", [])
         if cv_summary:
-            cv_df = pd.DataFrame(cv_summary)[["Model", "CV Accuracy", "CV ROC-AUC", "CV Recall (Sensitivity)"]]
-            cv_df["CV Accuracy"] = cv_df["CV Accuracy"].map(lambda x: f"{x*100:.1f}%")
-            cv_df["CV ROC-AUC"] = cv_df["CV ROC-AUC"].map(lambda x: f"{x:.3f}")
-            cv_df["CV Recall (Sensitivity)"] = cv_df["CV Recall (Sensitivity)"].map(lambda x: f"{x*100:.1f}%")
-            st.dataframe(cv_df.head(6), use_container_width=True, hide_index=True)
+            cv_df = pd.DataFrame(cv_summary)
+            if "CV Recall" in cv_df.columns and "CV Recall (Sensitivity)" not in cv_df.columns:
+                cv_df = cv_df.rename(columns={"CV Recall": "CV Recall (Sensitivity)"})
+            display_cols = [c for c in ["Model", "CV Accuracy", "CV ROC-AUC", "CV Recall (Sensitivity)"] if c in cv_df.columns]
+            cv_display = cv_df[display_cols].copy()
+            if "CV Accuracy" in cv_display.columns:
+                cv_display["CV Accuracy"] = cv_display["CV Accuracy"].map(lambda x: f"{x*100:.1f}%" if isinstance(x, (int, float)) else str(x))
+            if "CV ROC-AUC" in cv_display.columns:
+                cv_display["CV ROC-AUC"] = cv_display["CV ROC-AUC"].map(lambda x: f"{x:.3f}" if isinstance(x, (int, float)) else str(x))
+            if "CV Recall (Sensitivity)" in cv_display.columns:
+                cv_display["CV Recall (Sensitivity)"] = cv_display["CV Recall (Sensitivity)"].map(lambda x: f"{x*100:.1f}%" if isinstance(x, (int, float)) else str(x))
+            st.dataframe(cv_display.head(6), use_container_width=True, hide_index=True)
 
         if os.path.exists("reports/roc_curves_comparison.png"):
             with st.expander("📈 View Multi-Model ROC Curves", expanded=False):
