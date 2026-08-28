@@ -5,7 +5,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 
 from src.data_loader import load_or_download_dataset
-from src.preprocessor import DataPreparationPipeline
+from src.preprocessor import EnhancedDataPipeline
 from src.model_trainer import ModelTrainer
 from src.evaluate import evaluate_predictions, plot_evaluation_suite
 
@@ -18,40 +18,32 @@ def run_diabetes_pipeline():
     print("\n[Step 1/5] Loading physiological diabetes dataset...")
     df = load_or_download_dataset(data_dir="data", filename="diabetes.csv")
     print(f"Loaded dataset: {df.shape[0]} patient records, {df.shape[1]} features.")
-    print("Distribution of Outcomes:\n", df["Outcome"].value_counts(normalize=True).to_dict())
+    print("Class Balance:\n", df["Outcome"].value_counts(normalize=True).to_dict())
 
-    # 2. Train-Test Split (Holdout 20% for unbiased final evaluation)
+    # 2. Train-Test Split (Holdout 20%)
     X = df.drop(columns=["Outcome"])
     y = df["Outcome"]
 
     X_train_raw, X_test_raw, y_train, y_test = train_test_split(
         X, y, test_size=0.20, random_state=42, stratify=y
     )
-    print(f"\n[Step 2/5] Stratified Split: Train set = {len(X_train_raw)}, Test set = {len(X_test_raw)}")
+    print(f"\n[Step 2/5] Stratified Holdout Split: Train = {len(X_train_raw)}, Test = {len(X_test_raw)}")
 
     # 3. Data Preparation & Feature Engineering Pipeline
     print("\n[Step 3/5] Executing Data Preparation Pipeline...")
-    print("  -> Replacing physiological 0s with NaN for Glucose, BP, Insulin, BMI, SkinThickness")
-    print("  -> Imputing missing values using Iterative MICE Imputer")
-    print("  -> Engineering Biomarkers: HOMA-IR proxy, Age-Glucose index, Metabolic syndrome score")
-    print("  -> Applying Robust Scaling & SMOTE Synthetic Class Resampling on training set")
+    print("  -> Creating missingness indicators & replacing physiological zeros with NaN")
+    print("  -> Iterative MICE imputation preserving cross-feature covariance")
+    print("  -> Engineering Clinical Biomarkers: HOMA-IR proxy, Metabolic index, Age-Glucose risk")
+    print("  -> Applying Robust Scaling & SMOTE synthetic class resampling")
 
-    prep_pipeline = DataPreparationPipeline(
-        imputer_strategy="iterative",
-        scaler_strategy="robust",
-        handle_outliers=True,
-        feature_engineering=True,
-        resampler_strategy="smote",
-        random_state=42
-    )
-
+    prep_pipeline = EnhancedDataPipeline(random_state=42, use_smote=True)
     X_train_proc, y_train_res, feature_names = prep_pipeline.fit_transform(X_train_raw, y_train)
     X_test_proc = prep_pipeline.transform(X_test_raw)
 
-    print(f"Features created ({len(feature_names)}): {feature_names}")
-    print(f"Resampled Training Shape: {X_train_proc.shape}, Target distribution: {pd.Series(y_train_res).value_counts().to_dict()}")
+    print(f"Features Engineered ({len(feature_names)}): {feature_names}")
+    print(f"Resampled Training Matrix: {X_train_proc.shape}")
 
-    # 4. Multi-Model Benchmark & Cross Validation
+    # 4. Multi-Model Benchmark & 10-Fold Stratified Cross-Validation
     print("\n[Step 4/5] Multi-Model Training & 10-Fold Stratified Cross-Validation...")
     trainer = ModelTrainer(random_state=42, models_dir="models")
     cv_summary = trainer.evaluate_cv(X_train_proc, y_train_res, n_splits=10)
@@ -61,23 +53,40 @@ def run_diabetes_pipeline():
     print("=" * 70)
     print(cv_summary.to_string(index=False))
 
-    best_model_name, best_model = trainer.train_and_select_best(X_train_proc, y_train_res)
+    best_model_name, best_model, optimal_threshold = trainer.train_and_select_best(X_train_proc, y_train_res)
 
-    # 5. Independent Test Evaluation & Artifact Generation
+    # 5. Independent Holdout Evaluation (Standard vs Optimal Threshold)
     print("\n[Step 5/5] Evaluating on Independent Test Set (20% Holdout)...")
     test_results = []
     for name, model in trainer.models.items():
-        y_pred = model.predict(X_test_proc)
-        y_prob = model.predict_proba(X_test_proc)[:, 1] if hasattr(model, "predict_proba") else None
-        metrics = evaluate_predictions(y_test.values, y_pred, y_prob)
-        metrics["Model"] = name
-        test_results.append(metrics)
+        probs = model.predict_proba(X_test_proc)[:, 1] if hasattr(model, "predict_proba") else None
+        
+        # Standard threshold 0.50
+        preds_std = (probs >= 0.50).astype(int) if probs is not None else model.predict(X_test_proc)
+        metrics_std = evaluate_predictions(y_test.values, preds_std, probs)
+        
+        # Optimal threshold
+        thresh = optimal_threshold if name == best_model_name else 0.50
+        preds_opt = (probs >= thresh).astype(int) if probs is not None else preds_std
+        metrics_opt = evaluate_predictions(y_test.values, preds_opt, probs)
+        
+        test_results.append({
+            "Model": name,
+            "Accuracy": metrics_std["Accuracy"],
+            "Precision": metrics_std["Precision"],
+            "Recall (Sensitivity)": metrics_std["Recall (Sensitivity)"],
+            "Specificity": metrics_std["Specificity"],
+            "F1-Score": metrics_std["F1-Score"],
+            "ROC-AUC": metrics_std["ROC-AUC"],
+            "Opt Thresh Acc": metrics_opt["Accuracy"],
+            "Opt Thresh Recall": metrics_opt["Recall (Sensitivity)"]
+        })
 
     test_results_df = pd.DataFrame(test_results).sort_values(by="ROC-AUC", ascending=False).reset_index(drop=True)
 
-    print("\n" + "=" * 70)
+    print("\n" + "=" * 75)
     print("                    TEST SET BENCHMARK RESULTS                        ")
-    print("=" * 70)
+    print("=" * 75)
     print(test_results_df.to_string(index=False))
 
     # Save artifacts
@@ -94,19 +103,20 @@ def run_diabetes_pipeline():
         X_test=X_test_proc,
         y_test=y_test.values,
         best_model_name=best_model_name,
+        optimal_threshold=optimal_threshold,
         feature_names=feature_names,
         output_dir="reports"
     )
 
+    best_metrics = test_results_df[test_results_df['Model'] == best_model_name].iloc[0]
     print("\n" + "=" * 75)
     print("                      PIPELINE EXECUTION COMPLETE!                    ")
-    print(f" Best Performing Model: {best_model_name}")
-    best_test_metrics = test_results_df[test_results_df['Model'] == best_model_name].iloc[0]
-    print(f" Test Accuracy: {best_test_metrics['Accuracy']*100:.2f}%")
-    print(f" Test ROC-AUC:  {best_test_metrics['ROC-AUC']:.4f}")
-    print(f" Test Recall (Sensitivity): {best_test_metrics['Recall (Sensitivity)']*100:.2f}%")
-    print(f" Test Specificity: {best_test_metrics['Specificity']*100:.2f}%")
-    print(f" Artifacts saved in 'models/' and visual charts in 'reports/'")
+    print(f" [*] Top Production Model: {best_model_name}")
+    print(f" [*] Optimal Clinical Decision Threshold: {optimal_threshold:.3f}")
+    print(f" [*] Test ROC-AUC:            {best_metrics['ROC-AUC']:.4f}")
+    print(f" [*] Test Recall/Sensitivity: {best_metrics['Opt Thresh Recall']*100:.2f}% (High Detection Rate)")
+    print(f" [*] Test Accuracy:           {best_metrics['Opt Thresh Acc']*100:.2f}%")
+    print(f" [*] Artifacts saved in 'models/' and visual charts in 'reports/'")
     print("=" * 75)
 
 if __name__ == "__main__":
