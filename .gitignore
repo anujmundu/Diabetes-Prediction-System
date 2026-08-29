@@ -34,3 +34,6 @@ wheels/
 # OS metadata
 .DS_Store
 Thumbs.db
+
+# Model Training Logs
+catboost_info/
