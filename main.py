@@ -120,4 +120,16 @@ def run_diabetes_pipeline():
     print("=" * 75)
 
 if __name__ == "__main__":
-    run_diabetes_pipeline()
+    # If launched by Streamlit Cloud / CLI, render the interactive CDSS dashboard
+    try:
+        import streamlit.runtime
+        is_streamlit = streamlit.runtime.exists()
+    except Exception:
+        is_streamlit = False
+
+    if is_streamlit or any("streamlit" in arg.lower() for arg in sys.argv):
+        import app
+        app.main()
+    else:
+        run_diabetes_pipeline()
+
